@@ -6,8 +6,9 @@
 #include "U8g2lib.h"
 
 void Write_List(const char* path);
-String Read_Path(int target_line);
+void Read_Name(int target_line);
 void U8g2_Show();
+String Read_Path(int target_line);
 
 
 // Digital I/O used
@@ -21,13 +22,13 @@ void U8g2_Show();
 
 #define add_vol       2
 #define cut_vol       15
-#define next_music    12
-#define pre_music     14
-#define start_music   13
+#define next_music    16
+#define pre_music     4
+#define start_music   17
 
 Audio audio;
 String line_one, line_two, line_three;
-int line_index = 1, max_index;
+int line_index = 1, max_index, music_start = 0, menu_change = 0;
 String music_path;
 int Vol = 1;
 U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R0, SCL, SDA, U8X8_PIN_NONE);
@@ -46,18 +47,18 @@ void Change_2(){        //中断音量-
 
 void Change_3(){
     line_index+=1;
-    music_path = Read_Path(line_index);
-    U8g2_Show();
+    Serial.println(line_index);
+    menu_change = 1;
 }
 
 void Change_4(){
     line_index-=1;
-    music_path = Read_Path(line_index);
-    U8g2_Show();
+    Serial.println(line_index);
+    menu_change = 1;
 }
 
 void Change_5(){
-    audio.connecttoFS(SD, music_path.c_str());
+    music_start = 1;
 }
 
 void setup() {
@@ -67,7 +68,7 @@ void setup() {
     pinMode(cut_vol, INPUT_PULLDOWN);       //配置音量-引脚
     pinMode(next_music, INPUT_PULLDOWN);    //配置下一首引脚
     pinMode(pre_music, INPUT_PULLDOWN);     //配置上一首引脚
-    pinMode(start_music, INPUT_PULLDOWN);   //配置下一首引脚
+    pinMode(start_music, INPUT_PULLDOWN);   //配置播放引脚
     attachInterrupt(digitalPinToInterrupt(add_vol), Change_1, FALLING);     //中断音量+
     attachInterrupt(digitalPinToInterrupt(cut_vol), Change_2, FALLING);     //中断音量-
     attachInterrupt(digitalPinToInterrupt(next_music), Change_3, FALLING);
@@ -84,21 +85,23 @@ void setup() {
 
     //获取目标行数的文件路径，获取ssd1306上显示的文本
     music_path = Read_Path(line_index);
+    Read_Name(line_index);
 
     //ssd1306显示初始化配置
     u8g2.begin();
     u8g2.enableUTF8Print();
     u8g2.setFont(u8g2_font_wqy13_t_gb2312b);
-    U8g2_Show();    //更新屏幕显示内容
+    U8g2_Show();
 
     audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
     audio.setVolume(1); // 0...21，设置初始音量
-    audio.connecttoFS(SD, music_path.c_str());      //播放文件
+    audio.connecttoSD(music_path.c_str());      //播放文件
 }
 
 void loop()
 {
     audio.loop();
+    vTaskDelay(1);
     if(Serial.available()){ // put streamURL in serial monitor
         audio.stopSong();
         String r=Serial.readString(); r.trim();
@@ -106,8 +109,21 @@ void loop()
         log_i("free heap=%i", ESP.getFreeHeap());
     }
 
-//    music_path = Read_Path(line_index);
-//    U8g2_Show();
+    //播放选中的音乐
+    if(music_start == 1){
+        music_start = 0;
+        audio.stopSong();
+        music_path = Read_Path(line_index);
+        audio.connecttoSD(music_path.c_str());
+    }
+
+    //刷新显示屏
+    if(menu_change == 1){
+        menu_change = 0;
+        Read_Name(line_index);
+        U8g2_Show();
+    }
+
 }
 
 // optional
@@ -152,37 +168,43 @@ void Write_List(const char* path){
         file_path.println(file.name());
         file = root.openNextFile();         //打开下一个文件
         max_index+=1;
-        Serial.println(max_index);
     }
     file_list.close();
     file_path.close();
     root.close();
 }
 
-//读取两个文件中的内容
-String Read_Path(int target_line){
+//读取file_list.txt文件中的内容
+void Read_Name(int target_line){
     int remain = max_index-target_line;
-    File file_path =SD.open("/file_path.txt");
     File file_list =SD.open("/file_list.txt");
     for(int i = 1; i < target_line; i++){       //for循环跳过前面的内容
-        file_path.readStringUntil('\n');
         file_list.readStringUntil('\n');
     }
-    String line_txt = file_path.readStringUntil('\n');      //获取目标文件的路径
-    if(remain>0){
+    if(remain>=0){
         line_one = file_list.readStringUntil('\n');             //ssd1306上的第一行
     }
-    if(remain>1){
+    if(remain>=1){
         line_two = file_list.readStringUntil('\n');             //ssd1306上的第二行
     }
-    if(remain>2){
+    if(remain>=2){
         line_three = file_list.readStringUntil('\n');           //ssd1306上的第三行
     }
 
-    file_path.close();
     file_list.close();
 
-    return line_txt;        //返回目标文件的路径
+}
+
+//读取目标行数的文件路径
+String Read_Path(int target_line){
+    File file_path =SD.open("/file_path.txt");
+    for(int i = 1; i < target_line; i++) {       //for循环跳过前面的内容
+        file_path.readStringUntil('\n');
+    }
+    String line_txt = file_path.readStringUntil('\n');
+    file_path.close();
+
+    return line_txt;
 }
 
 //ssd1306显示函数
