@@ -26,12 +26,14 @@ String Read_Path(int target_line);
 #define pre_music     4
 #define start_music   17
 
+
 Audio audio;
 String line_one, line_two, line_three;
 int line_index = 1, max_index, music_start = 0, menu_change = 0;
 String music_path;
 int Vol = 1;
-U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R0, SCL, SDA, U8X8_PIN_NONE);
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, SCL, SDA, U8X8_PIN_NONE);
+unsigned long button_time = 0;
 
 void Change_1(){        //中断音量+
     Vol+=1;
@@ -45,16 +47,26 @@ void Change_2(){        //中断音量-
     audio.setVolume(Vol);  //设置音量
 }
 
-void Change_3(){
-    line_index+=1;
-    Serial.println(line_index);
-    menu_change = 1;
+void Change_3(){        //中断下一首
+    unsigned long currentTime = millis();
+    if(currentTime-button_time>50){
+        line_index+=1;
+        if(line_index>max_index){line_index=1;}
+        Serial.println(line_index);
+        menu_change = 1;
+    }
+    button_time = currentTime;
 }
 
-void Change_4(){
-    line_index-=1;
-    Serial.println(line_index);
-    menu_change = 1;
+void Change_4(){        //中断上一首
+    unsigned long currentTime = millis();
+    if(currentTime-button_time>50){
+        line_index-=1;
+        if(line_index<1){line_index=max_index;}
+        Serial.println(line_index);
+        menu_change = 1;
+    }
+    button_time = currentTime;
 }
 
 void Change_5(){
@@ -71,9 +83,9 @@ void setup() {
     pinMode(start_music, INPUT_PULLDOWN);   //配置播放引脚
     attachInterrupt(digitalPinToInterrupt(add_vol), Change_1, FALLING);     //中断音量+
     attachInterrupt(digitalPinToInterrupt(cut_vol), Change_2, FALLING);     //中断音量-
-    attachInterrupt(digitalPinToInterrupt(next_music), Change_3, FALLING);
-    attachInterrupt(digitalPinToInterrupt(pre_music), Change_4, FALLING);
-    attachInterrupt(digitalPinToInterrupt(start_music), Change_5, FALLING);
+    attachInterrupt(digitalPinToInterrupt(next_music), Change_3, FALLING);  //中断下一首
+    attachInterrupt(digitalPinToInterrupt(pre_music), Change_4, FALLING);   //中断上一首
+    attachInterrupt(digitalPinToInterrupt(start_music), Change_5, FALLING); //中断点播
 
     SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
     SPI.setFrequency(1000000);
@@ -183,6 +195,8 @@ void Read_Name(int target_line){
     }
     if(remain>=0){
         line_one = file_list.readStringUntil('\n');             //ssd1306上的第一行
+        line_two = "";
+        line_three = "";
     }
     if(remain>=1){
         line_two = file_list.readStringUntil('\n');             //ssd1306上的第二行
